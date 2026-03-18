@@ -507,13 +507,16 @@ if defined conflicts (
     call :PrintGreen "  Конфликтующие сервисы — нет"
 )
 
-:: 12. WinDivert без winws
+:: 12. WinDivert/Monkey без winws
 tasklist /FI "IMAGENAME eq winws2.exe" 2>nul | find /I "winws2.exe" >nul
 set "winws_run=!errorlevel!"
-sc query "WinDivert" 2>nul | findstr /I "RUNNING STOP_PENDING" >nul
-set "wd_run=!errorlevel!"
+set "wd_run=1"
+for %%s in (WinDivert Monkey) do (
+    sc query "%%s" 2>nul | findstr /I "RUNNING STOP_PENDING" >nul
+    if !errorlevel!==0 set "wd_run=0"
+)
 if !winws_run! neq 0 if !wd_run!==0 (
-    call :PrintYellow "  [?] WinDivert без winws2 — очищаю..."
+    call :PrintYellow "  [?] WinDivert/Monkey без winws2 — очищаю..."
     call :cleanup_windivert
 )
 
@@ -709,13 +712,13 @@ if !errorlevel!==0 (
 exit /b
 
 :cleanup_windivert
-sc query "WinDivert" >nul 2>&1
-if !errorlevel!==0 (
-    net stop "WinDivert" >nul 2>&1
-    sc delete "WinDivert" >nul 2>&1
+for %%s in (WinDivert WinDivert14 Monkey Monkey14) do (
+    sc query "%%s" >nul 2>&1
+    if !errorlevel!==0 (
+        net stop "%%s" >nul 2>&1
+        sc delete "%%s" >nul 2>&1
+    )
 )
-net stop "WinDivert14" >nul 2>&1
-sc delete "WinDivert14" >nul 2>&1
 exit /b
 
 :: Создать XML для задачи (альтернативный метод)

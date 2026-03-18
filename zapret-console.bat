@@ -69,8 +69,7 @@ if /i "!c!"=="v" (start "" "tg://resolve?domain=zapretvpns_bot" & goto menu)
 if /i "!c!"=="r" (
     taskkill /F /IM winws2.exe >nul 2>&1
     timeout /t 2 /nobreak >nul
-    sc query "WinDivert" >nul 2>&1 && (net stop "WinDivert" >nul 2>&1 & sc delete "WinDivert" >nul 2>&1)
-    net stop "WinDivert14" >nul 2>&1 & sc delete "WinDivert14" >nul 2>&1
+    for %%s in (WinDivert WinDivert14 Monkey Monkey14) do (sc query "%%s" >nul 2>&1 && (net stop "%%s" >nul 2>&1 & sc delete "%%s" >nul 2>&1))
     if exist "%ACTIVE_PRESET%" (start "" /D "%BASE_DIR%" /MIN "%WINWS2_EXE%" @"%ACTIVE_PRESET%")
     timeout /t 2 /nobreak >nul
     goto menu

@@ -10,7 +10,7 @@ set "PRESETS_DIR=%BASE_DIR%\presets"
 set "WINWS2_EXE=%BASE_DIR%\exe\winws2.exe"
 set "ACTIVE_PRESET=%BASE_DIR%\preset-active.txt"
 set "STATE_FILE=%BASE_DIR%\current_preset.txt"
-set "RUN_BAT=%BASE_DIR%\zapret2-run.bat"
+set "RUN_BAT=%BASE_DIR%\utils\zapret2-run.bat"
 set "TASK_NAME=Zapret2"
 set "VERSION=1.2.0"
 

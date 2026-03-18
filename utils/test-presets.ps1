@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Continue"
+﻿$ErrorActionPreference = "Continue"
 $hasErrors = $false
 
 $rootDir = Split-Path $PSScriptRoot

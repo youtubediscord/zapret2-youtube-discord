@@ -25,18 +25,18 @@ title Zapret2 Quick Launch
 cls
 echo.
 echo   ZAPRET2 QUICK LAUNCH
-echo   ════════════════════════════════════════
+echo   ════════════════════════════════════════ 2>nul
 
 if exist "%STATE_FILE%" (
     set /p CURRENT_PRESET=<"%STATE_FILE%"
-    echo   Текущий: !CURRENT_PRESET!
+    echo   Текущий: !CURRENT_PRESET! 2>nul
 ) else (
     set "CURRENT_PRESET="
-    echo   Текущий: не выбран
+    echo   Текущий: не выбран 2>nul
 )
 
 tasklist /FI "IMAGENAME eq winws2.exe" 2>nul | find /I "winws2.exe" >nul
-if %errorlevel% equ 0 (echo   winws2: ЗАПУЩЕН) else (echo   winws2: ОСТАНОВЛЕН)
+if %errorlevel% equ 0 (echo   winws2: ЗАПУЩЕН 2>nul) else (echo   winws2: ОСТАНОВЛЕН 2>nul)
 
 echo.
 
@@ -49,16 +49,16 @@ for %%F in ("%PRESETS_DIR%\*.txt") do (
         set "preset_path[!count!]=%%~fF"
         set "m=  "
         if defined CURRENT_PRESET if "!fname!"=="!CURRENT_PRESET!" set "m=► "
-        if !count! lss 10 (echo   !m! !count!. %%~nF) else (echo   !m!!count!. %%~nF)
+        if !count! lss 10 (echo   !m! !count!. %%~nF 2>nul) else (echo   !m!!count!. %%~nF 2>nul)
     )
 )
 
 echo.
-echo   [S] Стоп  [R] Рестарт  [M] service.bat  [Q] Выход
-echo   [T] TG Группа  [B] Bypass Block  [V] VPN Bot
+echo   [S] Стоп  [R] Рестарт  [M] service.bat  [Q] Выход 2>nul
+echo   [T] TG Группа  [B] Bypass Block  [V] VPN Bot 2>nul
 echo.
 set "c="
-set /p "c=  Выбор (1-%count%): "
+set /p "c=  Выбор (1-%count%): " 2>nul
 
 if /i "!c!"=="q" goto :eof
 if /i "!c!"=="m" (start "" "%BASE_DIR%\service.bat" & goto :eof)

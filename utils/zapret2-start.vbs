@@ -25,5 +25,5 @@ WshShell.Run sSys32 & "\cmd.exe /c " & sSys32 & "\netsh.exe interface tcp set gl
 '' Short pause after cleanup
 WScript.Sleep 500
 
-'' Launch winws2 fully hidden (0 = Hidden, False = don't wait)
-WshShell.Run """" & sRootDir & "\exe\winws2.exe"" @""" & sRootDir & "\utils\preset-active.txt""", 0, False
+'' Launch winws2 hidden via cmd.exe (inherits elevation from Task Scheduler)
+WshShell.Run sSys32 & "\cmd.exe /c cd /d """ & sRootDir & """ && ""exe\winws2.exe"" @""utils\preset-active.txt""", 0, False

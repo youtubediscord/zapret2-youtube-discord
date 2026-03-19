@@ -793,7 +793,7 @@ echo     WshShell.Run sSys32 ^& "\cmd.exe /c " ^& sSys32 ^& "\sc.exe query """ ^
 echo Next
 echo WshShell.Run sSys32 ^& "\cmd.exe /c " ^& sSys32 ^& "\netsh.exe interface tcp set global timestamps=enabled ^>nul 2^>^&1", 0, True
 echo WScript.Sleep 500
-echo WshShell.Run """" ^& sRootDir ^& "\exe\winws2.exe"" @""" ^& sRootDir ^& "\utils\preset-active.txt""", 0, False
+echo WshShell.Run sSys32 ^& "\cmd.exe /c cd /d """ ^& sRootDir ^& """ ^&^& ""exe\winws2.exe"" @""utils\preset-active.txt""", 0, False
 ) > "%RUN_VBS%"
 exit /b
 

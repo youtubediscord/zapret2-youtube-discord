@@ -1,4 +1,17 @@
-﻿$ErrorActionPreference = "Continue"
+﻿# ===== ОБХОД ПОЛИТИКИ ВЫПОЛНЕНИЯ =====
+# Если скрипт запущен напрямую без -ExecutionPolicy Bypass, перезапуск с обходом
+if ($MyInvocation.Line -notmatch 'Bypass' -and $ExecutionContext.SessionState.LanguageMode -eq 'FullLanguage') {
+    $currentPolicy = Get-ExecutionPolicy -Scope Process
+    if ($currentPolicy -eq 'Restricted' -or $currentPolicy -eq 'AllSigned') {
+        $scriptPath = $MyInvocation.MyCommand.Path
+        if ($scriptPath) {
+            Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`"" -Verb RunAs
+            exit
+        }
+    }
+}
+
+$ErrorActionPreference = "Continue"
 $hasErrors = $false
 
 $rootDir = Split-Path $PSScriptRoot
@@ -29,7 +42,27 @@ function Stop-Winws2 {
 
 function Start-Winws2 {
     param([string]$PresetPath)
-    $proc = Start-Process -FilePath $winws2Exe -ArgumentList "@`"$PresetPath`"" -WorkingDirectory $rootDir -PassThru -WindowStyle Minimized
+    # Используем System.Diagnostics.Process напрямую вместо Start-Process
+    # для обхода ошибки "The operation was canceled by the user"
+    try {
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = $winws2Exe
+        $psi.Arguments = "@`"$PresetPath`""
+        $psi.WorkingDirectory = $rootDir
+        $psi.UseShellExecute = $false
+        $psi.CreateNoWindow = $true
+        $proc = [System.Diagnostics.Process]::Start($psi)
+    } catch {
+        Write-Host "  [!] Ошибка запуска через Process: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Host "  [!] Пробую альтернативный метод..." -ForegroundColor Yellow
+        try {
+            # Fallback: cmd /c start
+            $proc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"cd /d `"$rootDir`" && start /min `"`" `"$winws2Exe`" @`"$PresetPath`"`"" -PassThru -WindowStyle Hidden
+        } catch {
+            Write-Host "  [X] Не удалось запустить winws2: $($_.Exception.Message)" -ForegroundColor Red
+            return $null
+        }
+    }
     Start-Sleep -Seconds 4
     return $proc
 }
@@ -432,7 +465,18 @@ try {
                     $args_ = $p.CommandLine.Substring($exe.Length).Trim()
                 }
             }
-            Start-Process -FilePath $exe -ArgumentList $args_ -WorkingDirectory (Split-Path $exe -Parent) -WindowStyle Minimized | Out-Null
+            try {
+                $psi = New-Object System.Diagnostics.ProcessStartInfo
+                $psi.FileName = $exe
+                $psi.Arguments = $args_
+                $psi.WorkingDirectory = (Split-Path $exe -Parent)
+                $psi.UseShellExecute = $false
+                $psi.CreateNoWindow = $true
+                [System.Diagnostics.Process]::Start($psi) | Out-Null
+            } catch {
+                # Fallback
+                Start-Process -FilePath $exe -ArgumentList $args_ -WorkingDirectory (Split-Path $exe -Parent) -WindowStyle Minimized -ErrorAction SilentlyContinue | Out-Null
+            }
         }
     }
 }

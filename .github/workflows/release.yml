@@ -41,15 +41,59 @@ jobs:
           $version = "${{ steps.version.outputs.VERSION }}"
           $archiveName = "zapret2-youtube-discord-v$version"
           $stagingDir = "$env:RUNNER_TEMP\$archiveName"
+          $7z = "C:\Program Files\7-Zip\7z.exe"
 
-          # Copy repo to staging (exclude .git and .github)
-          robocopy . $stagingDir /E /XD .git .github /XF .gitattributes | Out-Null
+          # Copy repo to staging (exclude .git, .github, .gitattributes, .gitignore)
+          robocopy . $stagingDir /E /XD .git .github /XF .gitattributes .gitignore | Out-Null
 
-          # Create ZIP
-          Compress-Archive -Path $stagingDir -DestinationPath "$env:GITHUB_WORKSPACE\$archiveName.zip" -Force
+          # Ensure all text files have CRLF (safety check)
+          Get-ChildItem -Path $stagingDir -Recurse -Include *.bat,*.cmd,*.ps1,*.vbs,*.txt,*.lua,*.md | ForEach-Object {
+            $content = [System.IO.File]::ReadAllText($_.FullName)
+            if ($content -match "`n" -and $content -notmatch "`r`n") {
+              $content = $content -replace "`n", "`r`n"
+              [System.IO.File]::WriteAllText($_.FullName, $content)
+              Write-Host "Fixed CRLF: $($_.Name)"
+            }
+          }
 
-          # Create 7z
-          & "C:\Program Files\7-Zip\7z.exe" a -t7z -mx=9 "$env:GITHUB_WORKSPACE\$archiveName.7z" $stagingDir
+          # --- 7z archive ---
+          & $7z a -t7z -mx=9 "$env:GITHUB_WORKSPACE\$archiveName.7z" "$stagingDir\*"
+
+          # --- Self-extracting EXE (7-Zip SFX) ---
+          # Create SFX config for installer module
+          $sfxConfig = @"
+          ;!@Install@!UTF-8!
+          Title="Zapret2 YouTube Discord v$version"
+          BeginPrompt="Raspakovat' Zapret2 YouTube Discord v$version?"
+          ExtractPathText="Papka:"
+          ExtractPathDefault="%USERPROFILE%\Desktop\$archiveName"
+          ExtractDialogText="Raspakovka..."
+          ;!@InstallEnd@!
+          "@
+          # Remove leading whitespace from heredoc
+          $sfxConfig = ($sfxConfig -split "`n" | ForEach-Object { $_.TrimStart() }) -join "`n"
+          [System.IO.File]::WriteAllBytes("$env:RUNNER_TEMP\sfx_config.txt", [System.Text.Encoding]::UTF8.GetBytes($sfxConfig))
+
+          # Create temp 7z for SFX
+          & $7z a -t7z -mx=9 -mf=BCJ2 "$env:RUNNER_TEMP\temp_sfx.7z" "$stagingDir\*"
+
+          # Concatenate: SFX module + config + archive = self-extracting exe
+          $sfxModule = "C:\Program Files\7-Zip\7zSD.sfx"
+          if (-not (Test-Path $sfxModule)) {
+            # Fallback: use 7z.sfx if 7zSD.sfx not available
+            $sfxModule = "C:\Program Files\7-Zip\7z.sfx"
+          }
+
+          $outputExe = "$env:GITHUB_WORKSPACE\$archiveName.exe"
+          cmd.exe /c copy /b "$sfxModule" + "$env:RUNNER_TEMP\sfx_config.txt" + "$env:RUNNER_TEMP\temp_sfx.7z" "$outputExe"
+
+          if (Test-Path $outputExe) {
+            $size = [math]::Round((Get-Item $outputExe).Length / 1MB, 1)
+            Write-Host "SFX EXE created: $archiveName.exe ($size MB)"
+          } else {
+            Write-Host "::warning::SFX EXE creation failed, falling back to ZIP"
+            Compress-Archive -Path "$stagingDir\*" -DestinationPath "$env:GITHUB_WORKSPACE\$archiveName.zip" -Force
+          }
 
       - name: Create tag and release
         shell: pwsh
@@ -64,8 +108,12 @@ jobs:
           git tag $version
           git push origin $version
 
-          gh release create $version `
-            "$archiveName.zip" `
-            "$archiveName.7z" `
+          # Collect available release assets
+          $assets = @()
+          if (Test-Path "$archiveName.7z") { $assets += "$archiveName.7z" }
+          if (Test-Path "$archiveName.exe") { $assets += "$archiveName.exe" }
+          if (Test-Path "$archiveName.zip") { $assets += "$archiveName.zip" }
+
+          gh release create $version @assets `
             --title "v$version" `
             --generate-notes

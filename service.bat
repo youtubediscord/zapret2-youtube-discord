@@ -11,8 +11,9 @@ set "WINWS2_EXE=%BASE_DIR%\exe\winws2.exe"
 set "ACTIVE_PRESET=%BASE_DIR%\utils\preset-active.txt"
 set "STATE_FILE=%BASE_DIR%\utils\current_preset.txt"
 set "RUN_BAT=%BASE_DIR%\utils\zapret2-run.bat"
+set "RUN_VBS=%BASE_DIR%\utils\zapret2-start.vbs"
 set "TASK_NAME=Zapret2"
-set "VERSION=1.2.0"
+set "VERSION=1.3.0"
 
 :: Внешние команды
 if "%~1"=="stop" (
@@ -21,10 +22,10 @@ if "%~1"=="stop" (
 )
 
 :: Проверка прав администратора
-net session >nul 2>&1
+net.exe session >nul 2>&1
 if %errorlevel% neq 0 (
     echo [!] Требуются права администратора. Перезапуск...
-    powershell -NoProfile -Command "Start-Process '%~f0' -Verb RunAs"
+    powershell.exe -NoProfile -Command "Start-Process '%~f0' -Verb RunAs"
     exit /b
 )
 
@@ -46,37 +47,37 @@ call :get_process_status
 
 echo.
 echo   ZAPRET2 CONSOLE v%VERSION%
-echo   ════════════════════════════════════════════
+echo   ============================================
 echo.
 echo   Текущий пресет:  !CURRENT_PRESET_NAME!
 echo   Автозапуск:      !TASK_STATUS_TEXT!
 echo   Процесс winws2:  !PROCESS_STATUS_TEXT!
 echo.
-echo   ── ПРЕСЕТЫ ──────────────────────────────────
+echo   -- ПРЕСЕТЫ ----------------------------------
 echo      1. Выбрать пресет
 echo.
-echo   ── АВТОЗАПУСК ───────────────────────────────
+echo   -- АВТОЗАПУСК -------------------------------
 echo      2. Установить автозапуск
 echo      3. Удалить автозапуск
 echo      4. Статус
 echo.
-echo   ── ЗАПУСК ───────────────────────────────────
+echo   -- ЗАПУСК -----------------------------------
 echo      5. Запустить winws2
 echo      6. Остановить winws2
 echo      7. Перезапустить winws2
 echo.
-echo   ── ИНСТРУМЕНТЫ ──────────────────────────────
+echo   -- ИНСТРУМЕНТЫ ------------------------------
 echo      8. Диагностика
 echo      9. Тестирование пресетов
 echo     10. Очистить кэш Discord
 echo     11. Включить TCP timestamps
 echo.
-echo   ════════════════════════════════════════════
-echo   ── ССЫЛКИ ──────────────────────────────────
+echo   ============================================
+echo   -- ССЫЛКИ ----------------------------------
 echo     12. TG: VPN Discord YouTube
 echo     13. TG: Bypass Block
 echo     14. TG Bot: @zapretvpns_bot
-echo   ════════════════════════════════════════════
+echo   ============================================
 echo      0. Выход
 echo.
 
@@ -106,7 +107,7 @@ goto menu
 cls
 echo.
 echo   ВЫБОР ПРЕСЕТА
-echo   ════════════════════════════════════════════
+echo   ============================================
 echo.
 
 set "count=0"
@@ -119,7 +120,7 @@ for %%F in ("%PRESETS_DIR%\*.txt") do (
 
         set "marker=  "
         if defined CURRENT_PRESET_NAME (
-            if "!fname!"=="!CURRENT_PRESET_NAME!" set "marker=► "
+            if "!fname!"=="!CURRENT_PRESET_NAME!" set "marker=> "
         )
 
         if !count! lss 10 (
@@ -137,7 +138,7 @@ if "!count!"=="0" (
 )
 
 echo.
-echo   ────────────────────────────────────────────
+echo   --------------------------------------------
 echo      0. Назад
 echo.
 set "choice="
@@ -153,7 +154,7 @@ for /l %%i in (1,1,%count%) do (
 
 if "!valid!"=="0" (
     call :PrintRed "  Неверный выбор"
-    timeout /t 2 /nobreak >nul
+    timeout.exe /t 2 /nobreak >nul
     goto preset_select
 )
 
@@ -193,7 +194,7 @@ goto menu
 cls
 echo.
 echo   УСТАНОВКА АВТОЗАПУСКА
-echo   ════════════════════════════════════════════
+echo   ============================================
 echo.
 
 if not exist "%ACTIVE_PRESET%" (
@@ -207,28 +208,41 @@ echo   Пресет: !CURRENT_PRESET_NAME!
 echo.
 
 :: Удалить старую задачу если есть
-schtasks /Query /TN "%TASK_NAME%" >nul 2>&1
+schtasks.exe /Query /TN "%TASK_NAME%" >nul 2>&1
 if !errorlevel!==0 (
     call :PrintYellow "  Удаляю старую задачу..."
-    schtasks /Delete /TN "%TASK_NAME%" /F >nul 2>&1
+    schtasks.exe /Delete /TN "%TASK_NAME%" /F >nul 2>&1
 )
 
 :: Включить TCP timestamps
 call :do_tcp_enable
 
 :: Создать задачу: при входе пользователя, с наивысшими правами
+:: Используем VBS-лаунчер для полностью скрытого запуска (без окна в панели задач)
 echo   Создаю задачу автозапуска...
-schtasks /Create /TN "%TASK_NAME%" /TR "\"%RUN_BAT%\"" /SC ONLOGON /RL HIGHEST /F >nul 2>&1
+
+:: Проверяем наличие VBS-лаунчера
+if not exist "%RUN_VBS%" (
+    call :PrintYellow "  VBS-лаунчер не найден, создаю..."
+    call :create_vbs_launcher
+)
+
+:: Метод 1: через XML (предпочтительный — полный контроль над скрытием)
+call :create_task_xml
+schtasks.exe /Create /TN "%TASK_NAME%" /XML "%BASE_DIR%\zapret2-task.xml" /F >nul 2>&1
 if !errorlevel! neq 0 (
-    call :PrintRed "  Ошибка создания задачи!"
-    call :PrintYellow "  Пробую альтернативный метод..."
-    :: Альтернатива: через XML для большего контроля
-    call :create_task_xml
-    schtasks /Create /TN "%TASK_NAME%" /XML "%BASE_DIR%\zapret2-task.xml" /F >nul 2>&1
+    call :PrintYellow "  XML-метод не сработал, пробую альтернативный..."
+    :: Метод 2: через schtasks с VBS
+    schtasks.exe /Create /TN "%TASK_NAME%" /TR "wscript.exe \"%RUN_VBS%\"" /SC ONLOGON /RL HIGHEST /F >nul 2>&1
     if !errorlevel! neq 0 (
-        call :PrintRed "  Не удалось создать задачу!"
-        pause
-        goto menu
+        :: Метод 3: через schtasks с BAT (fallback, окно будет видно)
+        schtasks.exe /Create /TN "%TASK_NAME%" /TR "\"%RUN_BAT%\"" /SC ONLOGON /RL HIGHEST /F >nul 2>&1
+        if !errorlevel! neq 0 (
+            call :PrintRed "  Не удалось создать задачу!"
+            pause
+            goto menu
+        )
+        call :PrintYellow "  Установлен через BAT (окно winws2 будет видно в панели задач)"
     )
 )
 
@@ -263,13 +277,13 @@ goto menu
 cls
 echo.
 echo   УДАЛЕНИЕ АВТОЗАПУСКА
-echo   ════════════════════════════════════════════
+echo   ============================================
 echo.
 
 :: Удалить задачу
-schtasks /Query /TN "%TASK_NAME%" >nul 2>&1
+schtasks.exe /Query /TN "%TASK_NAME%" >nul 2>&1
 if !errorlevel!==0 (
-    schtasks /Delete /TN "%TASK_NAME%" /F >nul 2>&1
+    schtasks.exe /Delete /TN "%TASK_NAME%" /F >nul 2>&1
     call :PrintGreen "  Задача '%TASK_NAME%' удалена"
 ) else (
     echo   Задача '%TASK_NAME%' не найдена
@@ -279,7 +293,7 @@ if !errorlevel!==0 (
 call :get_process_status
 if "!PROCESS_RUNNING!"=="1" (
     echo   Останавливаю winws2.exe...
-    taskkill /F /IM winws2.exe >nul 2>&1
+    taskkill.exe /F /IM winws2.exe >nul 2>&1
     call :PrintGreen "  winws2.exe остановлен"
 )
 
@@ -299,7 +313,7 @@ goto menu
 cls
 echo.
 echo   СТАТУС
-echo   ════════════════════════════════════════════
+echo   ============================================
 echo.
 
 :: Задача
@@ -307,7 +321,7 @@ call :get_task_status
 if "!TASK_EXISTS!"=="1" (
     call :PrintGreen "  Автозапуск '%TASK_NAME%' — установлен"
     :: Показать детали
-    schtasks /Query /TN "%TASK_NAME%" /V /FO LIST 2>nul | findstr /I "Status Last.Run Next.Run" 2>nul
+    schtasks.exe /Query /TN "%TASK_NAME%" /V /FO LIST 2>nul | findstr.exe /I "Status Last.Run Next.Run" 2>nul
 ) else (
     call :PrintRed "  Автозапуск '%TASK_NAME%' — не установлен"
 )
@@ -327,10 +341,10 @@ if not exist "%BASE_DIR%\exe\*.sys" (
 echo.
 
 :: Процесс
-tasklist /FI "IMAGENAME eq winws2.exe" 2>nul | find /I "winws2.exe" >nul
+tasklist.exe /FI "IMAGENAME eq winws2.exe" 2>nul | find.exe /I "winws2.exe" >nul
 if !errorlevel!==0 (
     call :PrintGreen "  Процесс winws2.exe ЗАПУЩЕН"
-    for /f "tokens=2" %%P in ('tasklist /FI "IMAGENAME eq winws2.exe" /NH 2^>nul ^| find /I "winws2.exe"') do (
+    for /f "tokens=2" %%P in ('tasklist.exe /FI "IMAGENAME eq winws2.exe" /NH 2^>nul ^| find.exe /I "winws2.exe"') do (
         echo   PID: %%P
     )
 ) else (
@@ -383,7 +397,7 @@ if not exist "%ACTIVE_PRESET%" (
     goto menu
 )
 call :do_stop_process
-timeout /t 1 /nobreak >nul
+timeout.exe /t 1 /nobreak >nul
 call :do_start_process
 echo.
 pause
@@ -395,11 +409,11 @@ goto menu
 cls
 echo.
 echo   ДИАГНОСТИКА
-echo   ════════════════════════════════════════════
+echo   ============================================
 echo.
 
 :: 1. Base Filtering Engine
-sc query BFE | findstr /I "RUNNING" >nul
+sc.exe query BFE | findstr.exe /I "RUNNING" >nul
 if !errorlevel!==0 (
     call :PrintGreen "  Base Filtering Engine — OK"
 ) else (
@@ -407,7 +421,7 @@ if !errorlevel!==0 (
 )
 
 :: 2. TCP timestamps
-netsh interface tcp show global | findstr /i "timestamps" | findstr /i "enabled" >nul
+netsh.exe interface tcp show global | findstr.exe /i "timestamps" | findstr.exe /i "enabled" >nul
 if !errorlevel!==0 (
     call :PrintGreen "  TCP timestamps — включены"
 ) else (
@@ -416,11 +430,11 @@ if !errorlevel!==0 (
 
 :: 3. Прокси
 set "proxyEnabled=0"
-for /f "tokens=2*" %%A in ('reg query "HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings" /v ProxyEnable 2^>nul ^| findstr /i "ProxyEnable"') do (
+for /f "tokens=2*" %%A in ('reg.exe query "HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings" /v ProxyEnable 2^>nul ^| findstr.exe /i "ProxyEnable"') do (
     if "%%B"=="0x1" set "proxyEnabled=1"
 )
 if !proxyEnabled!==1 (
-    for /f "tokens=2*" %%A in ('reg query "HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings" /v ProxyServer 2^>nul ^| findstr /i "ProxyServer"') do (
+    for /f "tokens=2*" %%A in ('reg.exe query "HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings" /v ProxyServer 2^>nul ^| findstr.exe /i "ProxyServer"') do (
         call :PrintYellow "  [?] Системный прокси: %%B"
     )
 ) else (
@@ -428,7 +442,7 @@ if !proxyEnabled!==1 (
 )
 
 :: 4. Adguard
-tasklist /FI "IMAGENAME eq AdguardSvc.exe" 2>nul | find /I "AdguardSvc.exe" >nul
+tasklist.exe /FI "IMAGENAME eq AdguardSvc.exe" 2>nul | find.exe /I "AdguardSvc.exe" >nul
 if !errorlevel!==0 (
     call :PrintRed "  [X] Adguard — может мешать Discord"
 ) else (
@@ -436,7 +450,7 @@ if !errorlevel!==0 (
 )
 
 :: 5. Killer Network
-sc query 2>nul | findstr /I "Killer" >nul
+sc.exe query 2>nul | findstr.exe /I "Killer" >nul
 if !errorlevel!==0 (
     call :PrintRed "  [X] Killer Network — конфликтует с zapret"
 ) else (
@@ -444,7 +458,7 @@ if !errorlevel!==0 (
 )
 
 :: 6. Intel Connectivity
-sc query 2>nul | findstr /I "Intel" | findstr /I "Connectivity" >nul
+sc.exe query 2>nul | findstr.exe /I "Intel" | findstr.exe /I "Connectivity" >nul
 if !errorlevel!==0 (
     call :PrintRed "  [X] Intel Connectivity — конфликтует с zapret"
 ) else (
@@ -453,8 +467,8 @@ if !errorlevel!==0 (
 
 :: 7. Check Point
 set "cpFound=0"
-sc query 2>nul | findstr /I "TracSrvWrapper" >nul && set "cpFound=1"
-sc query 2>nul | findstr /I "EPWD" >nul && set "cpFound=1"
+sc.exe query 2>nul | findstr.exe /I "TracSrvWrapper" >nul && set "cpFound=1"
+sc.exe query 2>nul | findstr.exe /I "EPWD" >nul && set "cpFound=1"
 if !cpFound!==1 (
     call :PrintRed "  [X] Check Point — конфликтует с zapret"
 ) else (
@@ -462,7 +476,7 @@ if !cpFound!==1 (
 )
 
 :: 8. SmartByte
-sc query 2>nul | findstr /I "SmartByte" >nul
+sc.exe query 2>nul | findstr.exe /I "SmartByte" >nul
 if !errorlevel!==0 (
     call :PrintRed "  [X] SmartByte — конфликтует с zapret"
 ) else (
@@ -470,7 +484,7 @@ if !errorlevel!==0 (
 )
 
 :: 9. VPN
-sc query 2>nul | findstr /I "VPN" >nul
+sc.exe query 2>nul | findstr.exe /I "VPN" >nul
 if !errorlevel!==0 (
     call :PrintYellow "  [?] VPN-сервисы обнаружены — могут конфликтовать"
 ) else (
@@ -487,7 +501,7 @@ if not exist "%BASE_DIR%\exe\*.sys" (
 :: 11. Конфликтующие обходы
 set "conflicts="
 for %%s in (GoodbyeDPI zapret discordfix_zapret winws1) do (
-    sc query "%%s" >nul 2>&1
+    sc.exe query "%%s" >nul 2>&1
     if !errorlevel!==0 set "conflicts=!conflicts! %%s"
 )
 if defined conflicts (
@@ -497,8 +511,8 @@ if defined conflicts (
     set /p "fix_choice=   Удалить конфликтующие сервисы? (Y/N): "
     if /i "!fix_choice!"=="Y" (
         for %%s in (!conflicts!) do (
-            net stop "%%s" >nul 2>&1
-            sc delete "%%s" >nul 2>&1
+            net.exe stop "%%s" >nul 2>&1
+            sc.exe delete "%%s" >nul 2>&1
         )
         call :cleanup_windivert
         call :PrintGreen "  Удалены"
@@ -508,11 +522,11 @@ if defined conflicts (
 )
 
 :: 12. WinDivert/Monkey без winws
-tasklist /FI "IMAGENAME eq winws2.exe" 2>nul | find /I "winws2.exe" >nul
+tasklist.exe /FI "IMAGENAME eq winws2.exe" 2>nul | find.exe /I "winws2.exe" >nul
 set "winws_run=!errorlevel!"
 set "wd_run=1"
 for %%s in (WinDivert Monkey) do (
-    sc query "%%s" 2>nul | findstr /I "RUNNING STOP_PENDING" >nul
+    sc.exe query "%%s" 2>nul | findstr.exe /I "RUNNING STOP_PENDING" >nul
     if !errorlevel!==0 set "wd_run=0"
 )
 if !winws_run! neq 0 if !wd_run!==0 (
@@ -522,7 +536,7 @@ if !winws_run! neq 0 if !wd_run!==0 (
 
 :: 13. DNS
 set "dohfound=0"
-for /f "delims=" %%a in ('powershell -NoProfile -Command "try { (Get-ChildItem -Recurse -Path 'HKLM:System\CurrentControlSet\Services\Dnscache\InterfaceSpecificParameters\' -ErrorAction Stop | Get-ItemProperty | Where-Object { $_.DohFlags -gt 0 } | Measure-Object).Count } catch { 0 }" 2^>nul') do (
+for /f "delims=" %%a in ('powershell.exe -NoProfile -Command "try { (Get-ChildItem -Recurse -Path 'HKLM:System\CurrentControlSet\Services\Dnscache\InterfaceSpecificParameters\' -ErrorAction Stop | Get-ItemProperty | Where-Object { $_.DohFlags -gt 0 } | Measure-Object).Count } catch { 0 }" 2^>nul') do (
     if %%a gtr 0 set "dohfound=1"
 )
 if !dohfound!==1 (
@@ -535,8 +549,8 @@ if !dohfound!==1 (
 set "hostsFile=%SystemRoot%\System32\drivers\etc\hosts"
 if exist "%hostsFile%" (
     set "yt_hosts=0"
-    findstr /I "youtube.com" "%hostsFile%" >nul 2>&1 && set "yt_hosts=1"
-    findstr /I "youtu.be" "%hostsFile%" >nul 2>&1 && set "yt_hosts=1"
+    findstr.exe /I "youtube.com" "%hostsFile%" >nul 2>&1 && set "yt_hosts=1"
+    findstr.exe /I "youtu.be" "%hostsFile%" >nul 2>&1 && set "yt_hosts=1"
     if !yt_hosts!==1 (
         call :PrintYellow "  [?] Hosts: есть записи YouTube"
     ) else (
@@ -552,7 +566,7 @@ if exist "%ACTIVE_PRESET%" (
 )
 
 echo.
-echo   ════════════════════════════════════════════
+echo   ============================================
 pause
 goto menu
 
@@ -562,14 +576,14 @@ goto menu
 cls
 echo.
 echo   ОЧИСТКА КЭША DISCORD
-echo   ════════════════════════════════════════════
+echo   ============================================
 echo.
 
-tasklist /FI "IMAGENAME eq Discord.exe" 2>nul | findstr /I "Discord.exe" >nul
+tasklist.exe /FI "IMAGENAME eq Discord.exe" 2>nul | findstr.exe /I "Discord.exe" >nul
 if !errorlevel!==0 (
     echo   Закрываю Discord...
-    taskkill /IM Discord.exe /F >nul 2>&1
-    timeout /t 2 /nobreak >nul
+    taskkill.exe /IM Discord.exe /F >nul 2>&1
+    timeout.exe /t 2 /nobreak >nul
     call :PrintGreen "  Discord закрыт"
 )
 
@@ -606,7 +620,7 @@ goto menu
 cls
 echo.
 echo   ТЕСТИРОВАНИЕ ПРЕСЕТОВ
-echo   ════════════════════════════════════════════
+echo   ============================================
 echo.
 
 call :get_process_status
@@ -616,7 +630,7 @@ if "!PROCESS_RUNNING!"=="1" (
 
 echo   Запускаю тесты в PowerShell...
 echo.
-start "" powershell -NoProfile -ExecutionPolicy Bypass -File "%BASE_DIR%\utils\test-presets.ps1"
+start "" powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%BASE_DIR%\utils\test-presets.ps1"
 pause
 goto menu
 
@@ -631,9 +645,9 @@ pause
 goto menu
 
 
-:: ══════════════════════════════════════════════
-:: ═════════  ВНУТРЕННИЕ ФУНКЦИИ  ═══════════════
-:: ══════════════════════════════════════════════
+:: ==============================================
+:: =========  ВНУТРЕННИЕ ФУНКЦИИ  ===============
+:: ==============================================
 
 :load_current_preset
 if exist "%STATE_FILE%" (
@@ -646,7 +660,7 @@ exit /b
 :get_task_status
 set "TASK_EXISTS=0"
 set "TASK_STATUS_TEXT=не установлен"
-schtasks /Query /TN "%TASK_NAME%" >nul 2>&1
+schtasks.exe /Query /TN "%TASK_NAME%" >nul 2>&1
 if !errorlevel!==0 (
     set "TASK_EXISTS=1"
     set "TASK_STATUS_TEXT=установлен (при входе)"
@@ -656,7 +670,7 @@ exit /b
 :get_process_status
 set "PROCESS_RUNNING=0"
 set "PROCESS_STATUS_TEXT=ОСТАНОВЛЕН"
-tasklist /FI "IMAGENAME eq winws2.exe" 2>nul | find /I "winws2.exe" >nul
+tasklist.exe /FI "IMAGENAME eq winws2.exe" 2>nul | find.exe /I "winws2.exe" >nul
 if !errorlevel!==0 (
     set "PROCESS_RUNNING=1"
     set "PROCESS_STATUS_TEXT=ЗАПУЩЕН"
@@ -665,10 +679,11 @@ exit /b
 
 :do_start_process
 call :cleanup_windivert
+timeout.exe /t 1 /nobreak >nul
 echo   Запускаю winws2...
 start "" /D "%BASE_DIR%" /MIN "%WINWS2_EXE%" @"%ACTIVE_PRESET%"
-timeout /t 2 /nobreak >nul
-tasklist /FI "IMAGENAME eq winws2.exe" 2>nul | find /I "winws2.exe" >nul
+timeout.exe /t 2 /nobreak >nul
+tasklist.exe /FI "IMAGENAME eq winws2.exe" 2>nul | find.exe /I "winws2.exe" >nul
 if !errorlevel! neq 0 (
     call :PrintRed "  [X] winws2 не удалось запустить!"
     call :PrintYellow "  Запуск напрямую для диагностики..."
@@ -681,11 +696,12 @@ if !errorlevel! neq 0 (
 exit /b
 
 :do_stop_process
-tasklist /FI "IMAGENAME eq winws2.exe" 2>nul | find /I "winws2.exe" >nul
+tasklist.exe /FI "IMAGENAME eq winws2.exe" 2>nul | find.exe /I "winws2.exe" >nul
 if !errorlevel!==0 (
     echo   Останавливаю winws2...
-    taskkill /F /IM winws2.exe >nul 2>&1
-    timeout /t 2 /nobreak >nul
+    taskkill.exe /F /IM winws2.exe >nul 2>&1
+    timeout.exe /t 2 /nobreak >nul
+    call :cleanup_windivert
     call :PrintGreen "  winws2 остановлен"
 ) else (
     echo   winws2 не запущен
@@ -697,12 +713,12 @@ call :do_stop_process
 exit /b
 
 :do_tcp_enable
-netsh interface tcp show global | findstr /i "timestamps" | findstr /i "enabled" >nul
+netsh.exe interface tcp show global | findstr.exe /i "timestamps" | findstr.exe /i "enabled" >nul
 if !errorlevel!==0 (
     call :PrintGreen "  TCP timestamps уже включены"
 ) else (
     echo   Включаю TCP timestamps...
-    netsh interface tcp set global timestamps=enabled >nul 2>&1
+    netsh.exe interface tcp set global timestamps=enabled >nul 2>&1
     if !errorlevel!==0 (
         call :PrintGreen "  TCP timestamps включены"
     ) else (
@@ -713,15 +729,15 @@ exit /b
 
 :cleanup_windivert
 for %%s in (WinDivert WinDivert14 Monkey Monkey14) do (
-    sc query "%%s" >nul 2>&1
+    sc.exe query "%%s" >nul 2>&1
     if !errorlevel!==0 (
-        net stop "%%s" >nul 2>&1
-        sc delete "%%s" >nul 2>&1
+        net.exe stop "%%s" >nul 2>&1
+        sc.exe delete "%%s" >nul 2>&1
     )
 )
 exit /b
 
-:: Создать XML для задачи (альтернативный метод)
+:: Создать XML для задачи — использует VBS для полностью скрытого запуска
 :create_task_xml
 (
 echo ^<?xml version="1.0" encoding="UTF-16"?^>
@@ -729,6 +745,7 @@ echo ^<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mi
 echo   ^<Triggers^>
 echo     ^<LogonTrigger^>
 echo       ^<Enabled^>true^</Enabled^>
+echo       ^<Delay^>PT5S^</Delay^>
 echo     ^</LogonTrigger^>
 echo   ^</Triggers^>
 echo   ^<Principals^>
@@ -743,10 +760,12 @@ echo     ^<StopIfGoingOnBatteries^>false^</StopIfGoingOnBatteries^>
 echo     ^<ExecutionTimeLimit^>PT0S^</ExecutionTimeLimit^>
 echo     ^<AllowStartOnDemand^>true^</AllowStartOnDemand^>
 echo     ^<AllowHardTerminate^>true^</AllowHardTerminate^>
+echo     ^<Hidden^>true^</Hidden^>
 echo   ^</Settings^>
 echo   ^<Actions^>
 echo     ^<Exec^>
-echo       ^<Command^>"%RUN_BAT%"^</Command^>
+echo       ^<Command^>wscript.exe^</Command^>
+echo       ^<Arguments^>"%RUN_VBS%"^</Arguments^>
 echo       ^<WorkingDirectory^>%BASE_DIR%^</WorkingDirectory^>
 echo     ^</Exec^>
 echo   ^</Actions^>
@@ -754,14 +773,33 @@ echo ^</Task^>
 ) > "%BASE_DIR%\zapret2-task.xml"
 exit /b
 
+:: Создать VBS-лаунчер если отсутствует
+:create_vbs_launcher
+(
+echo '' zapret2-start.vbs -- skrytyj zapusk winws2 dlja avtozapuska
+echo Set WshShell = CreateObject^("WScript.Shell"^)
+echo Set fso = CreateObject^("Scripting.FileSystemObject"^)
+echo sUtilsDir = fso.GetParentFolderName^(WScript.ScriptFullName^)
+echo sRootDir = fso.GetParentFolderName^(sUtilsDir^)
+echo WshShell.CurrentDirectory = sRootDir
+echo Dim services : services = Array^("WinDivert", "WinDivert14", "Monkey", "Monkey14"^)
+echo For Each svc In services
+echo     WshShell.Run "cmd.exe /c sc.exe query """ ^& svc ^& """ ^>nul 2^>^&1 ^&^& ^(net.exe stop """ ^& svc ^& """ ^>nul 2^>^&1 ^& sc.exe delete """ ^& svc ^& """ ^>nul 2^>^&1^)", 0, True
+echo Next
+echo WshShell.Run "cmd.exe /c netsh.exe interface tcp set global timestamps=enabled ^>nul 2^>^&1", 0, True
+echo WScript.Sleep 500
+echo WshShell.Run """" ^& sRootDir ^& "\exe\winws2.exe"" @""" ^& sRootDir ^& "\utils\preset-active.txt""", 0, False
+) > "%RUN_VBS%"
+exit /b
+
 :PrintGreen
-powershell -NoProfile -Command "Write-Host '%~1' -ForegroundColor Green"
+powershell.exe -NoProfile -Command "Write-Host '%~1' -ForegroundColor Green"
 exit /b
 
 :PrintRed
-powershell -NoProfile -Command "Write-Host '%~1' -ForegroundColor Red"
+powershell.exe -NoProfile -Command "Write-Host '%~1' -ForegroundColor Red"
 exit /b
 
 :PrintYellow
-powershell -NoProfile -Command "Write-Host '%~1' -ForegroundColor Yellow"
+powershell.exe -NoProfile -Command "Write-Host '%~1' -ForegroundColor Yellow"
 exit /b

@@ -1,2 +1,23 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# Явное сохранение CRLF для Windows-файлов
+* text=auto eol=crlf
+
+# Скрипты — всегда CRLF (Windows)
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.vbs text eol=crlf
+
+# Текстовые файлы — CRLF
+*.txt text eol=crlf
+*.lua text eol=crlf
+*.yml text eol=crlf
+*.yaml text eol=crlf
+*.md text eol=crlf
+
+# Бинарные файлы — без преобразований
+*.exe binary
+*.dll binary
+*.sys binary
+*.bin binary
+*.7z binary
+*.zip binary
